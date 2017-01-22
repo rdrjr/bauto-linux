@@ -104,6 +104,7 @@ obj-$(CONFIG_SOC_IMX6SL) += clk-imx6sl.o mach-imx6sl.o
 obj-$(CONFIG_SOC_IMX6Q) += pm-imx6q.o headsmp.o
 # i.MX6SL reuses i.MX6Q code
 obj-$(CONFIG_SOC_IMX6SL) += pm-imx6q.o headsmp.o
+obj-$(CONFIG_MACH_KSP5013) += mach-ksp5013.o cpuidle-imx6q.o clk-imx6q.o mach-imx6q.o 
 
 # i.MX5 based machines
 obj-$(CONFIG_MACH_MX51_BABBAGE) += mach-mx51_babbage.o

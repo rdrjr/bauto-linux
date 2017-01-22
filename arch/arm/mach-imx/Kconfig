@@ -784,6 +784,13 @@ config	SOC_IMX53
 	help
 	  This enables support for Freescale i.MX53 processor.
 
+config MACH_KSP5013
+	bool "Phytec i.MX6 KSP5013 support"
+    select SOC_IMX6Q
+
+	help
+	  This enables support for PHYTEC i.MX6 KSP5013 processor.
+
 config SOC_IMX6Q
 	bool "i.MX6 Quad/DualLite support"
 	select ARCH_HAS_CPUFREQ

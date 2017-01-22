@@ -5631,27 +5631,31 @@ static int wl1271_register_hw(struct wl1271 *wl)
 	if (wl->mac80211_registered)
 		return 0;
 
-	if (wl->nvs_len >= 12) {
-		/* NOTE: The wl->nvs->nvs element must be first, in
-		 * order to simplify the casting, we assume it is at
-		 * the beginning of the wl->nvs structure.
-		 */
-		u8 *nvs_ptr = (u8 *)wl->nvs;
+	if (wl->fuse_oui_addr && wl->fuse_nic_addr) {
+        wl12xx_derive_mac_addresses(wl, wl->fuse_oui_addr , wl->fuse_nic_addr + 1);
+    }
+    else {
+        if (wl->nvs_len >= 12) {
+            /* NOTE: The wl->nvs->nvs element must be first, in
+             * order to simplify the casting, we assume it is at
+             * the beginning of the wl->nvs structure.
+             */
+            u8 *nvs_ptr = (u8 *)wl->nvs;
 
-		oui_addr =
-			(nvs_ptr[11] << 16) + (nvs_ptr[10] << 8) + nvs_ptr[6];
-		nic_addr =
-			(nvs_ptr[5] << 16) + (nvs_ptr[4] << 8) + nvs_ptr[3];
-	}
+            oui_addr =
+                (nvs_ptr[11] << 16) + (nvs_ptr[10] << 8) + nvs_ptr[6];
+            nic_addr =
+                (nvs_ptr[5] << 16) + (nvs_ptr[4] << 8) + nvs_ptr[3];
+        }
 
-	/* if the MAC address is zeroed in the NVS derive from fuse */
-	if (oui_addr == 0 && nic_addr == 0) {
-		oui_addr = wl->fuse_oui_addr;
-		/* fuse has the BD_ADDR, the WLAN addresses are the next two */
-		nic_addr = wl->fuse_nic_addr + 1;
-	}
-
-	wl12xx_derive_mac_addresses(wl, oui_addr, nic_addr);
+        /* if the MAC address is zeroed in the NVS derive from fuse */
+        if (oui_addr == 0 && nic_addr == 0) {
+            oui_addr = wl->fuse_oui_addr;
+            /* fuse has the BD_ADDR, the WLAN addresses are the next two */
+            nic_addr = wl->fuse_nic_addr + 1;
+        }
+        wl12xx_derive_mac_addresses(wl, oui_addr, nic_addr);
+    }
 
 	ret = ieee80211_register_hw(wl->hw);
 	if (ret < 0) {

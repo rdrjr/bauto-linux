@@ -437,9 +437,11 @@ static int smsc911x_request_resources(struct platform_device *pdev)
 				ret);
 
 	/* Request clock */
-	pdata->clk = clk_get(&pdev->dev, NULL);
+	pdata->clk = of_clk_get(of_find_compatible_node(NULL, NULL, "fsl,imx6q-weim"), 0);
+
 	if (IS_ERR(pdata->clk))
-		netdev_warn(ndev, "couldn't get clock %li\n", PTR_ERR(pdata->clk));
+		dev_dbg(&pdev->dev, "couldn't get clock %li\n",
+			PTR_ERR(pdata->clk));
 
 	return ret;
 }
@@ -1341,6 +1343,42 @@ static void smsc911x_rx_multicast_update_workaround(struct smsc911x_data *pdata)
 	spin_unlock(&pdata->mac_lock);
 }
 
+static int smsc911x_phy_general_power_up(struct smsc911x_data *pdata)
+{
+	int rc = 0;
+
+	if (!pdata->phy_dev)
+		return rc;
+
+	/* If the internal PHY is in General Power-Down mode, all, except the
+	 * management interface, is powered-down and stays in that condition as
+	 * long as Phy register bit 0.11 is HIGH.
+	 *
+	 * In that case, clear the bit 0.11, so the PHY powers up and we can
+	 * access to the phy registers.
+	 */
+	rc = phy_read(pdata->phy_dev, MII_BMCR);
+	if (rc < 0) {
+		SMSC_WARN(pdata, drv, "Failed reading PHY control reg");
+		return rc;
+	}
+
+	/* If the PHY general power-down bit is not set is not necessary to
+	 * disable the general power down-mode.
+	 */
+	if (rc & BMCR_PDOWN) {
+		rc = phy_write(pdata->phy_dev, MII_BMCR, rc & ~BMCR_PDOWN);
+		if (rc < 0) {
+			SMSC_WARN(pdata, drv, "Failed writing PHY control reg");
+			return rc;
+		}
+
+		usleep_range(1000, 1500);
+	}
+
+	return 0;
+}
+
 static int smsc911x_phy_disable_energy_detect(struct smsc911x_data *pdata)
 {
 	int rc = 0;
@@ -1355,12 +1393,8 @@ static int smsc911x_phy_disable_energy_detect(struct smsc911x_data *pdata)
 		return rc;
 	}
 
-	/*
-	 * If energy is detected the PHY is already awake so is not necessary
-	 * to disable the energy detect power-down mode.
-	 */
-	if ((rc & MII_LAN83C185_EDPWRDOWN) &&
-	    !(rc & MII_LAN83C185_ENERGYON)) {
+	/* Only disable if energy detect mode is already enabled */
+	if (rc & MII_LAN83C185_EDPWRDOWN) {
 		/* Disable energy detect mode for this SMSC Transceivers */
 		rc = phy_write(pdata->phy_dev, MII_LAN83C185_CTRL_STATUS,
 			       rc & (~MII_LAN83C185_EDPWRDOWN));
@@ -1369,8 +1403,8 @@ static int smsc911x_phy_disable_energy_detect(struct smsc911x_data *pdata)
 			SMSC_WARN(pdata, drv, "Failed writing PHY control reg");
 			return rc;
 		}
-
-		mdelay(1);
+		/* Allow PHY to wakeup */
+		mdelay(2);
 	}
 
 	return 0;
@@ -1392,7 +1426,6 @@ static int smsc911x_phy_enable_energy_detect(struct smsc911x_data *pdata)
 
 	/* Only enable if energy detect mode is already disabled */
 	if (!(rc & MII_LAN83C185_EDPWRDOWN)) {
-		mdelay(100);
 		/* Enable energy detect mode for this SMSC Transceivers */
 		rc = phy_write(pdata->phy_dev, MII_LAN83C185_CTRL_STATUS,
 			       rc | MII_LAN83C185_EDPWRDOWN);
@@ -1401,8 +1434,6 @@ static int smsc911x_phy_enable_energy_detect(struct smsc911x_data *pdata)
 			SMSC_WARN(pdata, drv, "Failed writing PHY control reg");
 			return rc;
 		}
-
-		mdelay(1);
 	}
 	return 0;
 }
@@ -1412,6 +1443,16 @@ static int smsc911x_soft_reset(struct smsc911x_data *pdata)
 	unsigned int timeout;
 	unsigned int temp;
 	int ret;
+
+	/*
+	 * Make sure to power-up the PHY chip before doing a reset, otherwise
+	 * the reset fails.
+	 */
+	ret = smsc911x_phy_general_power_up(pdata);
+	if (ret) {
+		SMSC_WARN(pdata, drv, "Failed to power-up the PHY chip");
+		return ret;
+	}
 
 	/*
 	 * LAN9210/LAN9211/LAN9220/LAN9221 chips have an internal PHY that
@@ -1672,7 +1713,7 @@ static int smsc911x_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	pdata->ops->tx_writefifo(pdata, (unsigned int *)bufp, wrsz);
 	freespace -= (skb->len + 32);
 	skb_tx_timestamp(skb);
-	dev_kfree_skb(skb);
+	dev_consume_skb_any(skb);
 
 	if (unlikely(smsc911x_tx_get_txstatcount(pdata) >= 30))
 		smsc911x_tx_update_txcounters(dev);
@@ -2254,7 +2295,6 @@ static int smsc911x_init(struct net_device *dev)
 	if (smsc911x_soft_reset(pdata))
 		return -ENODEV;
 
-	ether_setup(dev);
 	dev->flags |= IFF_MULTICAST;
 	netif_napi_add(dev, &pdata->napi, smsc911x_poll, SMSC_NAPI_WEIGHT);
 	dev->netdev_ops = &smsc911x_netdev_ops;
@@ -2359,6 +2399,10 @@ static int smsc911x_probe_config_dt(struct smsc911x_platform_config *config,
 
 	return 0;
 }
+extern int of_irq_to_resource(struct device_node *dev, int index, struct resource *res);
+extern int of_address_to_resource(struct device_node *dev, int index,
+			   struct resource *r);
+
 #else
 static inline int smsc911x_probe_config_dt(
 				struct smsc911x_platform_config *config,
@@ -2367,6 +2411,72 @@ static inline int smsc911x_probe_config_dt(
 	return -ENODEV;
 }
 #endif /* CONFIG_OF */
+#ifdef CONFIG_MACH_KSP5013
+/* TODO: make this define related to sysfs and test */
+static bool smsc_eth_test_state = false; 
+/* Ethernet compliance test modes */
+#define MII_SPMODES 18
+#define MII_SCSI    27
+/* Special Control/Status Indications Register 27 (mii only) */
+/* Override AMDIX pin strapping */
+#define SMC_SCSI_AMDIX_OVERRIDE_STRAP    BIT(15)
+/* NOTE: Bit 14 and 13 cannot both be 1 */
+#define SMC_SCSI_AMDIX_ENABLE            BIT(14)
+/* Crossover Mode */
+#define SMC_SCSI_AMDIX_XOVER_EN          BIT(13)
+/* POR value is 0x000 << 4 | d/c for lower nibble */
+#define SMC_SCSI_AMDIX_USE_STRAP   0x0000
+static int smsc_enter_test_mode(struct smsc911x_data *pdata)
+{
+	struct phy_device *phy_dev = pdata->phy_dev;
+    /* Turn off AMDIX and force straight through line configuration */
+    smsc911x_mii_write(phy_dev->bus, phy_dev->addr,	MII_SCSI,
+                       SMC_SCSI_AMDIX_OVERRIDE_STRAP
+                       & ~SMC_SCSI_AMDIX_ENABLE
+                       & ~SMC_SCSI_AMDIX_XOVER_EN);
+    return 0;
+}
+static int smsc_exit_test_mode(struct smsc911x_data *pdata)
+{
+	struct phy_device *phy_dev = pdata->phy_dev;
+    /* Return AMDIX to configuration dictated by the pin strapping */
+    smsc911x_mii_write(phy_dev->bus, phy_dev->addr,	MII_SCSI,
+                       SMC_SCSI_AMDIX_USE_STRAP);
+    return smsc911x_phy_reset(pdata);
+}
+
+
+/* sysfs i/f for Ethernet compliance testing */
+static ssize_t smsc_show_test_state(struct device *dev, 
+                                   struct device_attribute *devattr, 
+                                   char *buf)
+{
+	return sprintf(buf, "%s\n", smsc_eth_test_state ? "on" : "off");
+}
+
+static ssize_t smsc_set_test_state(struct device *dev, 
+                                  struct device_attribute *attr, 
+                                  const char *buf, size_t cbuf)
+{
+    if (!strncmp("on", buf, cbuf - 1)) {
+        if (!smsc_eth_test_state) {
+            smsc_eth_test_state = true;
+            smsc_enter_test_mode(netdev_priv(to_net_dev(dev)));
+        }
+    }
+    else if (!strncmp("off", buf, cbuf - 1)) {
+        if (smsc_eth_test_state) {
+            smsc_eth_test_state = false;
+            smsc_exit_test_mode(netdev_priv(to_net_dev(dev)));
+        }
+    }
+
+    return cbuf;
+}
+static DEVICE_ATTR(test_state, S_IRUGO | S_IWUSR, 
+                   smsc_show_test_state, smsc_set_test_state);
+
+#endif /* CONFIG_MACH_KSP5013 */
 
 static int smsc911x_drv_probe(struct platform_device *pdev)
 {
@@ -2378,8 +2488,6 @@ static int smsc911x_drv_probe(struct platform_device *pdev)
 	unsigned int intcfg = 0;
 	int res_size, irq_flags;
 	int retval;
-
-	pr_info("Driver version %s\n", SMSC_DRV_VERSION);
 
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM,
 					   "smsc911x-memory");
@@ -2478,6 +2586,8 @@ static int smsc911x_drv_probe(struct platform_device *pdev)
 		goto out_disable_resources;
 	}
 
+	netif_carrier_off(dev);
+
 	retval = register_netdev(dev);
 	if (retval) {
 		SMSC_WARN(pdata, probe, "Error %i registering device", retval);
@@ -2521,6 +2631,12 @@ static int smsc911x_drv_probe(struct platform_device *pdev)
 				   "MAC Address is set to eth_random_addr");
 		}
 	}
+#ifdef CONFIG_MACH_KSP5013
+    retval = device_create_file(&dev->dev, &dev_attr_test_state);
+    if (retval)
+		netdev_err(dev, "failed to create sysfs test state entry(%i)!\n",retval);
+#endif /* CONFIG_MACH_KSP5013 */
+
 
 	spin_unlock_irq(&pdata->mac_lock);
 

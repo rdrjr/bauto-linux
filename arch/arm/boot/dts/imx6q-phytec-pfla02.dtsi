@@ -10,13 +10,60 @@
  */
 
 #include "imx6q.dtsi"
-
+#include "include/dt-bindings/gpio/gpio.h"
 / {
-	model = "Phytec phyFLEX-i.MX6 Ouad";
-	compatible = "phytec,imx6q-pfla02", "fsl,imx6q";
+	aliases {
+		mxcfb0 = &mxcfb1;
+		mxcfb1 = &mxcfb2;
+    };
 
 	memory {
 		reg = <0x10000000 0x80000000>;
+	};
+    leds: leds {
+        compatible = "gpio-leds";
+
+        heartbeat {
+            label = "Heartbeat";
+            gpios = <&gpio2 31 GPIO_ACTIVE_LOW>;
+            linux,default-trigger = "heartbeat";
+        };
+    };
+
+    /* NOTE: flexCAN per parent clock (pll3_60m) isn't being turned on by can_root enable, 
+     *       so the "per" clock enable for can{1,2}_serial fails, making the mcr set fail for RX FIFO.
+     *       Overriding default soc clock enables. -cnc
+     */
+    soc {
+        busfreq {
+        clocks = <&clks 171>, <&clks 6>, <&clks 11>, <&clks 104>, <&clks 172>, <&clks 58>,
+                <&clks 18>, <&clks 60>, <&clks 20>, <&clks 3>, <&clks 14>, <&clks 101>;
+        /* &clks 54 emi_slow_sel */
+
+        clock-names = "pll2_bus", "pll2_pfd2_396m", "pll2_198m", "arm", "pll3_usb_otg", "periph",
+                    "periph_pre", "periph_clk2", "periph_clk2_sel", "osc", "pll3_60m","axi";
+        };
+    };
+	mxcfb1: fb@0 {
+		compatible = "fsl,mxc_sdc_fb";
+		disp_dev = "hdmi";
+		interface_pix_fmt = "RGB24";
+		mode_str ="1920x1080M@60";
+		default_bpp = <16>;
+		int_clk = <0>;
+		late_init = <0>;
+		status = "disabled";
+	};
+
+	mxcfb2: fb@1 {
+		compatible = "fsl,mxc_sdc_fb";
+		disp_dev = "ldb";
+		interface_pix_fmt = "RGB666";
+		mode_str ="Primeview-PM070WL4";
+		default_bpp = <16>;
+		int_clk = <0>;
+		late_init = <0>;
+		status = "disabled";
 	};
 };
 
@@ -25,7 +72,7 @@
 	pinctrl-0 = <&pinctrl_ecspi3_1>;
 	status = "okay";
 	fsl,spi-num-chipselects = <1>;
-	cs-gpios = <&gpio4 24 0>;
+	cs-gpios = <&gpio4 24 GPIO_ACTIVE_HIGH>;
 
 	flash@0 {
 		compatible = "m25p80";
@@ -39,9 +86,10 @@
 	pinctrl-0 = <&pinctrl_i2c1_1>;
 	status = "okay";
 
-	eeprom@50 {
+	pfla02_eeprom: eeprom@50 {
 		compatible = "atmel,24c32";
 		reg = <0x50>;
+		pagesize = <32>;
 	};
 
 	pmic@58 {
@@ -106,6 +154,8 @@
 			};
 
 			vdd_sd0_reg: ldo9 {
+                regulator-name = "vmmc_3v3";
+                compatible = "regulator-fixed";
 				regulator-min-microvolt = <3300000>;
 				regulator-max-microvolt = <3300000>;
 			};
@@ -127,54 +177,117 @@
 &iomuxc {
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_hog>;
-
+						
+    /* Pin Hogging, these are grabbed by the CPU immediately on boot. Being used below for
+     * maintaining settings made by bootloader.
+     */
 	hog {
 		pinctrl_hog: hoggrp {
 			fsl,pins = <
-				MX6QDL_PAD_EIM_D23__GPIO3_IO23 0x80000000
-				MX6QDL_PAD_DISP0_DAT3__GPIO4_IO24 0x80000000 /* SPI NOR chipselect */
-				MX6QDL_PAD_DI0_PIN15__GPIO4_IO17  0x80000000 /* PMIC interrupt */
+/*				MX6QDL_PAD_EIM_D23__GPIO3_IO23     0x80000000 *//* RGMII_nRST */
+				MX6QDL_PAD_DISP0_DAT3__GPIO4_IO24  0x80000000 /* SPI0_CSBOOT NOR */
+                MX6QDL_PAD_DISP0_DAT4__GPIO4_IO25  0x80000000 /* SPI0_CS0 */
+                MX6QDL_PAD_DISP0_DAT5__GPIO4_IO26  0x80000000 /* SPI0_CS1 */
+                MX6QDL_PAD_SD1_DAT1__GPIO1_IO17    0x80000000 /* SPI1_CS0 */
+				MX6QDL_PAD_DI0_PIN15__GPIO4_IO17   0x80000000 /* PMIC interrupt */
+                /* MX6QDL_PAD_GPIO_0__USB_H1_PWR      0x80000000*/ /* USBH1_PWR */
+                /* MX6QDL_PAD_GPIO_3__USB_H1_OC       0x80000000*/ /* USBH1_OC */
+                /* MX6QDL_PAD_KEY_ROW4__GPIO4_IO15    0x80000000*/ /* OTG_PWR */
+                /* MX6QDL_PAD_KEY_COL4__USB_OTG_OC    0x80000000*/ /* OTG_OC */
+                MX6QDL_PAD_EIM_EB3__GPIO2_IO31     0x80000000 /* Red SOM LED */
+                MX6QDL_PAD_ENET_TXD0__GPIO1_IO30   0x80000000 /* Green SOM LED */
 			>;
 		};
 	};
 
 	pfla02 {
-		pinctrl_usdhc3_pfla02: usdhc3grp-pfla02 {
+        /* SD1 @ X1 */
+        pinctrl_usdhc2_pfla02: usdhc2grp-pfla02 {
+            fsl,pins = <
+                MX6QDL_PAD_SD2_CMD__SD2_CMD         0x170F1 
+                MX6QDL_PAD_SD2_CLK__SD2_CLK         0x100F1 
+                MX6QDL_PAD_SD2_DAT0__SD2_DATA0      0x170F1 
+                MX6QDL_PAD_SD2_DAT1__SD2_DATA1      0x170F1 
+                MX6QDL_PAD_SD2_DAT2__SD2_DATA2      0x170F1 
+                MX6QDL_PAD_SD2_DAT3__SD2_DATA3      0x170F1 
+                MX6QDL_PAD_GPIO_2__GPIO1_IO02       0x80000000 
+                MX6QDL_PAD_GPIO_4__GPIO1_IO04       0x80000000
+            >;
+        };
+        /* SD0 @ X1 */
+        /* override speed, setting to 200MHZ, was 0x17071 */
+        pinctrl_usdhc3_pfla02_def: usdhc3grp1-pfla02 {
+			fsl,pins = <
+                MX6QDL_PAD_SD3_CMD__SD3_CMD         0x170F1 
+                MX6QDL_PAD_SD3_CLK__SD3_CLK         0x100F1 
+                MX6QDL_PAD_SD3_DAT0__SD3_DATA0      0x170F1 
+                MX6QDL_PAD_SD3_DAT1__SD3_DATA1      0x170F1 
+                MX6QDL_PAD_SD3_DAT2__SD3_DATA2      0x170F1 
+                MX6QDL_PAD_SD3_DAT3__SD3_DATA3      0x170F1 
+			>;
+		};
+        /* nCD and nWP */
+        pinctrl_usdhc3_pfla02_gpio: usdhc3grp2-pfla02 {
 			fsl,pins = <
 				MX6QDL_PAD_ENET_RXD0__GPIO1_IO27 0x80000000
 				MX6QDL_PAD_ENET_TXD1__GPIO1_IO29 0x80000000
 			>;
 		};
-	};
+        /*
+         * wl12xx GPIO outputs for WLAN_EN, BT_EN
+         * NOTE: Do *NOT* set the WLAN_nIRQ value to 0x80000000, will cause failure
+         */
+        pinctrl_wl12xx_pfla02: wl12xxgrp1-pfla02 {
+            fsl,pins = <
+                MX6QDL_PAD_SD3_CMD__SD3_CMD         0x170F1 
+                MX6QDL_PAD_SD3_CLK__SD3_CLK         0x170F1  /* changed to pullup per TI patches */
+                MX6QDL_PAD_SD3_DAT0__SD3_DATA0      0x170F1 
+                MX6QDL_PAD_SD3_DAT1__SD3_DATA1      0x170F1 
+                MX6QDL_PAD_SD3_DAT2__SD3_DATA2      0x170F1 
+                MX6QDL_PAD_SD3_DAT3__SD3_DATA3      0x170F1 
+                /* SD0_D7/WLAN_nIRQ -> SD3_DAT7__GPIO6_17 */
+                MX6QDL_PAD_SD3_DAT7__GPIO6_IO17     0x100F1 
+                /* SD0_D4/BT_EN -> SD3_DAT4__GPIO7_1 */
+                MX6QDL_PAD_SD3_DAT4__GPIO7_IO01  0x80000000 
+            >;
+        };
+        pinctrl_wl12xx_pfla02_gpio: wl12xxgrp2-pfla02 {
+            fsl,pins = <
+                MX6QDL_PAD_SD3_DAT6__GPIO6_IO18    0x170F1  /* WLAN_EN */
+            >;
+        };
+        pinctrl_stmpe811_pfla02: stmpe811grp-pfla02 {
+            fsl,pins = <
+                MX6QDL_PAD_DISP0_DAT14__GPIO5_IO08 0x80000000
+            >;
+        };
+        pinctrl_uart3_pfla02: uart3grp-pfla02 {
+			fsl,pins = <
+				MX6QDL_PAD_EIM_D24__UART3_TX_DATA 0x1b0b1
+				MX6QDL_PAD_EIM_D25__UART3_RX_DATA 0x1b0b1
+				MX6QDL_PAD_EIM_D30__UART3_CTS_B   0x1b0b1
+				MX6QDL_PAD_EIM_D31__UART3_RTS_B   0x1b0b1
+			>;
+		};
+        pinctrl_usbh1_pfla02: usbh1grp-pfla02 {
+            fsl,pins = <
+                MX6QDL_PAD_GPIO_3__USB_H1_OC  0x80000000 
+                MX6QDL_PAD_GPIO_0__USB_H1_PWR 0x80000000
+            >;
+        };
+		pinctrl_pwm1_pfla02: pwm1grp-pfla02 {
+			fsl,pins = <
+				MX6QDL_PAD_DISP0_DAT8__PWM1_OUT 0x1b0b1
+			>;
+		};
+    };
 };
 
 &fec {
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_enet_3>;
 	phy-mode = "rgmii";
-	phy-reset-gpios = <&gpio3 23 0>;
+	phy-reset-gpios = <&gpio3 23 GPIO_ACTIVE_HIGH>;
 	status = "disabled";
 };
 
-&uart4 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&pinctrl_uart4_1>;
-	status = "disabled";
-};
-
-&usdhc2 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&pinctrl_usdhc2_2>;
-	cd-gpios = <&gpio1 4 0>;
-	wp-gpios = <&gpio1 2 0>;
-	status = "disabled";
-};
-
-&usdhc3 {
-        pinctrl-names = "default";
-        pinctrl-0 = <&pinctrl_usdhc3_2
-		     &pinctrl_usdhc3_pfla02>;
-        cd-gpios = <&gpio1 27 0>;
-        wp-gpios = <&gpio1 29 0>;
-        status = "disabled";
-};

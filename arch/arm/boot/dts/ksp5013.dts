@@ -1,0 +1,539 @@
+/*
+ * Copyright 2013 Christian Hemp, Phytec Messtechnik GmbH
+ *
+ * The code contained herein is licensed under the GNU General Public
+ * License. You may obtain a copy of the GNU General Public License
+ * Version 2 or later at the following locations:
+ *
+ * http://www.opensource.org/licenses/gpl-license.html
+ * http://www.gnu.org/copyleft/gpl.html
+ */
+
+/dts-v1/;
+#include "imx6q-phytec-pfla02.dtsi"
+#include "include/dt-bindings/input/input.h"
+/ {
+	model = "PHYTEC KSP5013 phyFLEX-i.MX6 Quad Carrier-Board";
+	compatible = "phytec,ksp5013", "fsl,imx6q";
+
+    regulators {
+		compatible = "simple-bus";
+        /* Dummy regulators for the SMSC9220 as the driver doesn't honor
+         * the supply entries in the dt
+         */
+        smsc_vdd33a: vdd33a_dummy {
+            compatible = "regulator-fixed";
+            regulator-name = "vdd33a";
+            regulator-always-on;
+            regulator-min-microvolt = <3300000>;
+            regulator-max-microvolt = <3300000>;
+        };
+        smsc_vddvario: vddvario_dummy  {
+            compatible = "regulator-fixed";
+            regulator-name = "vddvario";
+            regulator-always-on;
+            regulator-min-microvolt = <3300000>;
+            regulator-max-microvolt = <3300000>;
+        };
+
+        usb_h1_pwr: usb_h1_vbus {
+            compatible = "regulator-fixed";
+            regulator-name = "usb_h1_vbus";
+            regulator-min-microvolt = <5000000>;
+            regulator-max-microvolt = <5000000>;
+            /* This line is DNI on the CB, but the USB logic may need it, will try without CNC */
+            /* gpio = <&gpio1 0x0 GPIO_ACTIVE_HIGH>; */
+            enable-active-high;
+        };
+        usb_otg_pwr: usb_otg_vbus {
+            compatible = "regulator-fixed";
+            regulator-name = "usb_otg_vbus";
+            regulator-min-microvolt = <5000000>;
+            regulator-max-microvolt = <5000000>;
+            gpio = <&gpio4 15 GPIO_ACTIVE_HIGH>; /* Q7 flips OTG_OTG_PWR to OTG_nVBUS_EN */
+            enable-active-high;
+        };
+        esdhc3_supply: sdmmc_3v3 {
+            compatible = "regulator-fixed";
+            regulator-name = "sdmmc_3v3";
+            regulator-min-microvolt = <3300000>;
+            regulator-max-microvolt = <3300000>;
+            vin_supply = <&vdd_sd0_reg>;
+        };
+
+        /* regulator for wl12xx on SD2(uP)/SD0(CB) */
+        wl12xx_supply: wl1271_1p8 {
+            compatible = "regulator-fixed";
+            regulator-name = "wl12xx-supply"; 
+            regulator-min-microvolt = <1800000>;
+            regulator-max-microvolt = <1800000>;
+            gpio = <&gpio6 18 GPIO_ACTIVE_HIGH>; /* WLAN_EN, Active High */
+            startup-delay-us = <70000>;
+            enable-active-high;
+            vin_supply = <&vdd_sd1_reg>;
+        };
+    };
+	gpio-keys {
+		compatible = "gpio-keys";
+		pinctrl-0 = <&soft_reset_button>;
+
+		reset {
+			label = "Soft Reset";
+			linux,code = <KEY_RESTART>; 
+			gpios = <&gpio5 13 GPIO_ACTIVE_HIGH>; /* DISP0_DAT19 */
+			gpio-key,wakeup;
+		};
+	};
+};
+
+&leds {
+
+    edge-led-green {
+        label = "ksp5013:green:status-led1";
+        gpios = <&gpio5 16 GPIO_ACTIVE_LOW>;
+        linux,default-trigger = "default-on";
+    };
+    edge-led-red {
+        label = "ksp5013:red:status-led2";
+        gpios = <&gpio5 17 GPIO_ACTIVE_LOW>;
+        linux,default-trigger = "none";
+    };
+    max6301-wdt {
+        label = "ksp5013::max6301-wdt";
+        gpios = <&gpio5 0 GPIO_ACTIVE_LOW>;
+        linux,default-trigger = "heartbeat";
+    };
+};
+
+&iomuxc {
+    pinctrl-names = "default"; 
+	pinctrl-0 = <&pinctrl_hog>, <&pinctrl_hog_2>;
+    hog {
+        pinctrl_hog_2: hoggrp2 {
+            fsl,pins = <
+                MX6QDL_PAD_DISP0_DAT22__GPIO5_IO16 0x80000000 /* Edge 2-color LED */
+                MX6QDL_PAD_DISP0_DAT23__GPIO5_IO17 0x80000000 /* Edge 2-color LED */
+                MX6QDL_PAD_EIM_EB1__GPIO2_IO29     0x100F1    /* WDT_nOE */
+                MX6QDL_PAD_EIM_WAIT__GPIO5_IO00    0x130F1    /* WDT_WDI */
+
+                MX6QDL_PAD_KEY_COL1__GPIO4_IO08         0x80000000 /* Dry Contact Output */
+                MX6QDL_PAD_KEY_ROW1__GPIO4_IO09         0x80000000 /* Dry Contact Output */
+                MX6QDL_PAD_CSI0_DAT10__GPIO5_IO28       0x80000000 /* Dry Contact Input */
+                MX6QDL_PAD_CSI0_DAT11__GPIO5_IO29       0x80000000 /* Dry Contact Input */
+
+            >;
+        };
+    };
+
+    usdhc2 {
+        /*
+        * TI wl1271 settings
+        */
+        pinctrl_wl12xx_ksp5013: wl12xxgrp1-ksp5013 {
+            fsl,pins = <
+                MX6QDL_PAD_SD2_CMD__SD2_CMD         0x170F1 
+                MX6QDL_PAD_SD2_CLK__SD2_CLK         0x170F1  /* changed to pullup per TI patches */
+                MX6QDL_PAD_SD2_DAT0__SD2_DATA0      0x170F1 
+                MX6QDL_PAD_SD2_DAT1__SD2_DATA1      0x170F1 
+                MX6QDL_PAD_SD2_DAT2__SD2_DATA2      0x170F1 
+                MX6QDL_PAD_SD2_DAT3__SD2_DATA3      0x170F1 
+                /* NOTE: Do *NOT* set the WLAN_nIRQ value to 
+                    * 0x80000000, will cause failure */
+                MX6QDL_PAD_SD3_DAT5__GPIO7_IO00     0x000100F1  /* WLAN_nIRQ */
+            >;
+        };
+        pinctrl_wl12xx_ksp5013_gpio: wl12xxgrp2-ksp5013 {
+            fsl,pins = <
+                MX6QDL_PAD_SD3_DAT6__GPIO6_IO18    0x130F1  /* WLAN_EN */
+            >;
+        };
+    };
+    gpio-keys {
+            soft_reset_button: gpiokey-ksp5013 {
+                fsl,pins = <
+                    MX6QDL_PAD_DISP0_DAT19__GPIO5_IO13 0x80000000 /* KEY_POWER */
+                >;
+            };
+    }; 
+    weim {
+
+        /* Pin control for ETH1 via EIM bus */
+        pinctrl_weimcs0_ksp5013: weimcs0-ksp5013 {
+            fsl,pins = <
+                /* nCS (GPIO9) */
+                MX6QDL_PAD_EIM_CS0__EIM_CS0_B        0xb0b1
+                /* IRQ input from PHY (4.7k PU on line) */
+                MX6QDL_PAD_EIM_A24__GPIO5_IO04       0x1f0c1
+            >;
+        };
+        pinctrl_weimcs1_ksp5013: weimcs1-ksp5013 {
+            fsl,pins = <
+                /* nCS (GPIO10) */
+                MX6QDL_PAD_EIM_CS1__EIM_CS1_B        0xb0b1
+                /* CNC the pullup on this line is in flux due to boot bug fix for pushpull */
+                /* IRQ input from PHY (4.7k PU on line) */
+                MX6QDL_PAD_EIM_D22__GPIO3_IO22       0x1f0c1
+            >;
+        };
+        pinctrl_weim_ksp5013: weimfecgrp-ksp5013 {
+            fsl,pins = <
+                /* Control Lines */
+                /* RD# */
+                MX6QDL_PAD_EIM_OE__EIM_OE_B          0x1b0b1
+                /* WR# */
+                MX6QDL_PAD_EIM_RW__EIM_RW            0x1b0b1
+                /* FIFO_SEL is output to PHY GPIO6_IO06 (no line pulls) */
+                MX6QDL_PAD_EIM_A23__GPIO6_IO06       0x1b0b1
+                /* PME Power Wakeup signal from PHY */
+                MX6QDL_PAD_DISP0_DAT15__GPIO5_IO09   0x1f0c1
+
+                /* Address Lines (SRE_FAST | HYS) */
+                MX6QDL_PAD_EIM_DA1__EIM_AD01         0x0b0b1
+                MX6QDL_PAD_EIM_DA2__EIM_AD02         0x0b0b1
+                MX6QDL_PAD_EIM_DA3__EIM_AD03         0x0b0b1
+                MX6QDL_PAD_EIM_DA4__EIM_AD04         0x0b0b1
+                MX6QDL_PAD_EIM_DA5__EIM_AD05         0x0b0b1
+                MX6QDL_PAD_EIM_DA6__EIM_AD06         0x0b0b1
+                MX6QDL_PAD_EIM_DA7__EIM_AD07         0x0b0b1
+
+                /* Data Lines (SRE_SLOW | ~HYS) */
+                MX6QDL_PAD_CSI0_DATA_EN__EIM_DATA00  0x1b0b0        
+                MX6QDL_PAD_CSI0_VSYNC__EIM_DATA01    0x1b0b0
+                MX6QDL_PAD_CSI0_DAT4__EIM_DATA02     0x1b0b0
+                MX6QDL_PAD_CSI0_DAT5__EIM_DATA03     0x1b0b0
+                MX6QDL_PAD_CSI0_DAT6__EIM_DATA04     0x1b0b0
+                MX6QDL_PAD_CSI0_DAT7__EIM_DATA05     0x1b0b0
+                MX6QDL_PAD_CSI0_DAT8__EIM_DATA06     0x1b0b0
+                MX6QDL_PAD_CSI0_DAT9__EIM_DATA07     0x1b0b0
+                MX6QDL_PAD_CSI0_DAT12__EIM_DATA08    0x1b0b0
+                MX6QDL_PAD_CSI0_DAT13__EIM_DATA09    0x1b0b0
+                MX6QDL_PAD_CSI0_DAT14__EIM_DATA10    0x1b0b0
+                MX6QDL_PAD_CSI0_DAT15__EIM_DATA11    0x1b0b0
+                MX6QDL_PAD_CSI0_DAT16__EIM_DATA12    0x1b0b0
+                MX6QDL_PAD_CSI0_DAT17__EIM_DATA13    0x1b0b0
+                MX6QDL_PAD_CSI0_DAT18__EIM_DATA14    0x1b0b0
+                MX6QDL_PAD_CSI0_DAT19__EIM_DATA15    0x1b0b0
+            >;
+        };
+    };
+    ecspi5 {
+        pinctrl_ecspi5_ksp5013: spi5grp-ksp5013 {
+            fsl,pins = <
+                MX6QDL_PAD_SD1_DAT0__ECSPI5_MISO 0x100b1
+				MX6QDL_PAD_SD1_CMD__ECSPI5_MOSI  0x100b1
+				MX6QDL_PAD_SD1_CLK__ECSPI5_SCLK  0x100b1
+            >;
+        };
+    };
+    usbotg {
+        /* Change USB0_ID to a pulldown, as it isn't connected */
+		pinctrl_usbotg_ksp5013: usbotggrp-ksp5013 {
+			fsl,pins = <
+				/*MX6QDL_PAD_GPIO_1__GPIO1_IO01   0x13059*/
+				MX6QDL_PAD_GPIO_1__USB_OTG_ID 0x13059
+				MX6QDL_PAD_KEY_ROW4__GPIO4_IO15 0x130F1
+			>;
+		};
+    };
+    fec {
+        pinctrl_enet_ksp5013: fec1grp-ksp5013 {
+            fsl,pins = <
+                MX6QDL_PAD_EIM_D23__GPIO3_IO23       0x1b0b1 /* RGMII_nRST */
+            >;
+        };
+    };
+    i2c2 {
+        pinctrl_rv4167_ksp5013: i2c2rvgrp-ksp5013 {
+            fsl,pins = <
+                MX6QDL_PAD_DISP0_DAT21__GPIO5_IO15   0x40013059
+            >;
+        };
+        pinctrl_tmp102_ksp5013: i2c2tmpgrp-ksp5013 {
+            fsl,pins = <
+                MX6QDL_PAD_DISP0_DAT20__GPIO5_IO14   0x40013059
+            >;
+        };
+    };
+
+}; /* iomuxc */
+
+/* This is X_I2C0 in schematic */
+&i2c2 {
+    pinctrl-names = "default"; 
+	pinctrl-0 = <&pinctrl_i2c2_1
+                 &pinctrl_rv4167_ksp5013
+                 &pinctrl_tmp102_ksp5013
+                 >; 
+    status = "okay";
+    tmp102@49 {
+		compatible = "tmp102";
+		reg = <0x49>;
+        /* DISP0_DAT20 pullup active low */
+        gpio = <&gpio5 14 1>;
+	};
+    rv4162c7@68 {
+        compatible = "rtc,rv4162c7";
+        reg= <0x68>;
+        /* DISP0_DAT21 pullup active low */
+        gpio = <&gpio5 15 1>; 
+    };
+};
+
+/* SPI0 
+ * 2 chip selects, 1 for Boot NOR, 1 for DIO 
+ */
+&ecspi3 {
+    fsl,spi-num-chipselects = <2>;
+	cs-gpios = <&gpio4 24 GPIO_ACTIVE_HIGH
+                &gpio4 25 GPIO_ACTIVE_HIGH>;
+
+};
+/* USB0 */
+&usbotg {
+    vbus-supply = <&usb_otg_pwr>;
+    /* GPIO_1 _ID pin */
+    pinctrl-names = "default";
+    /*pinctrl-0 = <&pinctrl_usbotg_1>;*/
+    pinctrl-0 = <&pinctrl_usbotg_ksp5013>;
+	dr_mode = "host";
+    /* CNC TODO: Revisit this setting as it's connected */
+    disable-over-current; 
+    status = "okay";
+};
+
+/* USB1 via DIO, diff pair only */
+&usbh1 {
+    vbus-supply = <&usb_h1_pwr>; 
+    status = "okay";
+};
+
+/* Enable mSATA interface */
+&sata {
+    status = "okay";
+};
+
+/* Enable NAND controller */
+&gpmi {
+    status = "okay";
+};
+
+/* KSZ9031 ETH0 on X12 */
+&fec {
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinctrl_enet_3 &pinctrl_enet_ksp5013>;
+    phy-mode = "rgmii";
+    phy-reset-gpios = <&gpio3 23 0>;
+    status = "okay";
+};
+
+&weim {   
+    pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_weim_ksp5013
+                 &pinctrl_weimcs0_ksp5013 /* ETH2 */
+                 &pinctrl_weimcs1_ksp5013 /* ETH1 */
+                >;
+    clocks = <
+        &clks 196 /* eim_slow */
+    >; 
+    clock-names = "eim_slow";
+    status = "okay";
+    #address-cells = <2>; 
+    #size-cells = <1>; 
+    ranges = <
+        0 0 0x08000000 0x02000000
+        1 0 0x0a000000 0x02000000
+    >;
+    /* ETH2 (DIO-Only) */
+    smsc911x@0,0 {
+        compatible = "smsc,lan9221", "smsc,lan9115";
+        fsl,weim-cs=<0>;
+        clocks = <&clks 196>;
+        clock-names = "eim_slow";
+        reg = <0 0 0x02000000>;
+/*        smsc,memory = <0x00000000 0x01000000>;*/
+        phy-mode = "mii";
+        #interrupt-cells = <2>;
+        interrupt-parent = <&gpio5>;
+        interrupts = <4 0x8>;
+        interrupt-names = "smsc911x-irq";
+/*        smsc,irq = <4>; */
+
+        /* 16-bit i/f */
+        reg-shift = <1>;
+        reg-io-width = <2>;
+        vdd33a-supply = <&smsc_vdd33a>;
+        vddvario-supply = <&smsc_vddvario>;
+        smsc,save-mac-address;
+        smsc,irq-push-pull;
+        smsc,force-internal-phy;
+		fsl,weim-cs-timing-name = "sync","async";
+        fsl,weim-cs-timing = <
+           0x152102B7 /* EIM_CSnGCR1 sync */ 
+           0x00000000 /* EIM_CSnGCR2 sync */ 
+           0x06080000 /* EIM_CSnRCR1 sync */
+           0x00000100 /* EIM_CSnRCR2 sync */ 
+           0xC4400000 /* EIM_CSnWCR1 sync */ 
+           0x00000000 /* EIM_CSnWCR2 both */
+        >;
+        fsl,weim-cs-timing-0 = <
+           0x152102B7 /* EIM_CSnGCR1 sync */ 
+           0x00000000 /* EIM_CSnGCR2 sync */ 
+           0x06080000 /* EIM_CSnRCR1 sync */
+           0x00000100 /* EIM_CSnRCR2 sync */ 
+           0xC4400000 /* EIM_CSnWCR1 sync */ 
+           0x00000000 /* EIM_CSnWCR2 both */
+        >;
+        fsl,weim-cs-timing-1 = <
+           0x00010031 /* EIM_CSnGCR1 async */
+           0x00000000 /* EIM_CSnGCR2 async */
+           0x16027202 /* EIM_CSnRCR1 async */
+           0x00000002 /* EIM_CSnRCR2 async */
+           0x16080E82 /* EIM_CSnWCR1 async */
+           0x00000000 /* EIM_CSnWCR2 both */
+        >;
+    };
+    /* ETH1 (RJ45) */
+    smsc911x@1,0 {
+        compatible = "smsc,lan9221", "smsc,lan9115";
+        fsl,weim-cs=<1>;
+        clocks = <&clks 196>;
+        clock-names = "eim_slow";
+        reg = <1 0 0x02000000>;
+/*        smsc,memory = <0x00000000 0x01000000>;*/
+        phy-mode = "mii";
+        #interrupt-cells = <2>;
+        interrupt-parent = <&gpio3>;
+        interrupts = <22 0x8>;
+        interrupt-names = "smsc911x-irq";
+/*        smsc,irq = <22>; */
+
+        /* 16-bit i/f */
+        reg-shift = <1>;
+        reg-io-width = <2>;
+        vdd33a-supply = <&smsc_vdd33a>;
+        vddvario-supply = <&smsc_vddvario>;
+        smsc,save-mac-address;
+        smsc,irq-push-pull;
+        smsc,force-internal-phy;
+		fsl,weim-cs-timing-name = "sync","async";
+        fsl,weim-cs-timing = <
+           0x152102B7 /* EIM_CSnGCR1 sync */ 
+           0x00000000 /* EIM_CSnGCR2 sync */ 
+           0x06080000 /* EIM_CSnRCR1 sync */
+           0x00000100 /* EIM_CSnRCR2 sync */ 
+           0xC4400000 /* EIM_CSnWCR1 sync */ 
+           0x00000000 /* EIM_CSnWCR2 both */
+        >;
+        fsl,weim-cs-timing-0 = <
+           0x152102B7 /* EIM_CSnGCR1 sync */ 
+           0x00000000 /* EIM_CSnGCR2 sync */ 
+           0x06080000 /* EIM_CSnRCR1 sync */
+           0x00000100 /* EIM_CSnRCR2 sync */ 
+           0xC4400000 /* EIM_CSnWCR1 sync */ 
+           0x00000000 /* EIM_CSnWCR2 both */
+        >;
+
+        fsl,weim-cs-timing-1 = <
+           0x00010031 /* EIM_CSnGCR1 async */
+           0x00000000 /* EIM_CSnGCR2 async */
+           0x16027202 /* EIM_CSnRCR1 async */
+           0x00000002 /* EIM_CSnRCR2 async */
+           0x16080E82 /* EIM_CSnWCR1 async */
+           0x00000000 /* EIM_CSnWCR2 both */
+        >;
+
+    };
+};
+
+/* Console/UART1 (X5) */
+&uart3 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_uart3_pfla02>;
+	status = "okay";
+};
+
+/* WLAN via SDIO */
+&usdhc2 {
+    pinctrl-names = "default";
+    pinctrl-0 = <
+        &pinctrl_wl12xx_ksp5013
+        &pinctrl_wl12xx_ksp5013_gpio
+    >;
+    vmmc-supply-name = "wl12xx-supply"; 
+    vmmc-supply = <&wl12xx_supply>;
+    non-removable; 
+    max-frequency  = <38400000>;
+    /* cap-power-off-card; */
+	status = "okay";
+};
+
+/* SD Card Slot */
+&usdhc3 {
+    pinctrl-names = "default";
+    pinctrl-0 = <
+        &pinctrl_usdhc3_pfla02_def
+    >;
+    cd-gpios = <&gpio1 27 GPIO_ACTIVE_HIGH>;
+    wp-gpios = <&gpio1 29 GPIO_ACTIVE_HIGH>;
+    vmmc-supply-name = "vmmc_3v3"; 
+    vmmc-supply = <&esdhc3_supply>; 
+    non-removable; 
+    status = "okay";
+};
+
+/* DIO-Only Interfaces */
+
+/* UART0 (DIO) */
+&uart4 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_uart4_1>;
+	status = "okay";
+};
+
+/* X_I2C1 (DIO) */
+&i2c3 {
+	clock-frequency = <400000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_i2c3_1>;
+	status = "okay";
+
+        ksp5013_eeprom:eeprom@51 {
+                compatible = "st,24c64";
+                reg = <0x51>;
+                pagesize = <32>;
+                status = "okay";
+        };
+};
+
+/* SPI1 (DIO) */
+&ecspi5 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_ecspi5_ksp5013>;
+    fsl,spi-num-chipselects = <1>;
+	cs-gpios = <&gpio1 17 GPIO_ACTIVE_HIGH>;
+    status = "okay";
+};
+
+
+
+/* Disable unneeded interfaces */
+
+
+&pwm1 {
+	status = "disabled";
+};
+
+&ldb {
+    status = "disabled";
+};
+&mxcfb1 {
+	status = "disabled";
+};
+
+&mxcfb2 {
+	status = "okay";
+};
+
+&can1 {
+    status = "disabled"; 
+};

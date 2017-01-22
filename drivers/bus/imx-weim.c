@@ -63,8 +63,8 @@ static int __init weim_timing_setup(struct device_node *np, void __iomem *base,
 	u32 cs_idx, value[devtype->cs_regs_count];
 	int i, ret;
 
-	/* get the CS index from this child node's "reg" property. */
-	ret = of_property_read_u32(np, "reg", &cs_idx);
+	/* get the CS index from this child node's chip select property. */
+	ret = of_property_read_u32(np, "fsl,weim-cs", &cs_idx);
 	if (ret)
 		return ret;
 

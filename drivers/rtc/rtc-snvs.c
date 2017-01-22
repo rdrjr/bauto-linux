@@ -273,10 +273,16 @@ static int snvs_rtc_probe(struct platform_device *pdev)
 	/* Enable RTC */
 	snvs_rtc_enable(data, true);
 
+    /* CNC BUGBUG there is something the rtc init does which enabled secvio to work
+     * that otherwise wouldn't happen. So moving snvs-rtc out of the kernel or disabled
+     * results in a hang/schd panic during secvio init.  Removing the rtc registration so a race condition
+     * with the actual battery-backed rtc registration doesn't occur.
+     */
+#ifndef CONFIG_MACH_KSP5013
 	device_init_wakeup(&pdev->dev, true);
 
 	ret = devm_request_irq(&pdev->dev, data->irq, snvs_rtc_irq_handler,
-			       IRQF_SHARED, "rtc alarm", &pdev->dev);
+			       IRQF_SHARED | IRQF_NO_SUSPEND, "rtc alarm", &pdev->dev);
 	if (ret) {
 		dev_err(&pdev->dev, "failed to request irq %d: %d\n",
 			data->irq, ret);
@@ -290,6 +296,9 @@ static int snvs_rtc_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "failed to register rtc: %d\n", ret);
 		return ret;
 	}
+#else
+    dev_err(&pdev->dev, "snvs-rtc registration bypassed\n");
+#endif // CONFIG_MACH_KSP5013
 
 	return 0;
 }
@@ -329,7 +338,7 @@ static struct platform_driver snvs_rtc_driver = {
 		.name	= "snvs_rtc",
 		.owner	= THIS_MODULE,
 		.pm	= &snvs_rtc_pm_ops,
-		.of_match_table = snvs_dt_ids,
+		.of_match_table = of_match_ptr(snvs_dt_ids),
 	},
 	.probe		= snvs_rtc_probe,
 };

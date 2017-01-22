@@ -721,6 +721,8 @@ static int genphy_config_advert(struct phy_device *phydev)
 	int oldadv, adv, bmsr;
 	int err, changed = 0;
 
+    //IMX HACK: Force GigE off, as it is getting overwritten after it is set by fec
+    phydev->supported &= ~(SUPPORTED_1000baseT_Half | SUPPORTED_1000baseT_Full);
 	/* Only allow advertising what this PHY supports */
 	phydev->advertising &= phydev->supported;
 	advertise = phydev->advertising;
@@ -762,16 +764,14 @@ static int genphy_config_advert(struct phy_device *phydev)
 	oldadv = adv;
 	adv &= ~(ADVERTISE_1000FULL | ADVERTISE_1000HALF);
 
-	if (phydev->supported & (SUPPORTED_1000baseT_Half |
-				 SUPPORTED_1000baseT_Full)) {
-		adv |= ethtool_adv_to_mii_ctrl1000_t(advertise);
-		if (adv != oldadv)
-			changed = 1;
+	adv |= ethtool_adv_to_mii_ctrl1000_t(advertise);
+	if (adv != oldadv) {
+		err = phy_write(phydev, MII_CTRL1000, adv);
+		
+		if (err < 0)
+			return err;
+		changed = 1;
 	}
-
-	err = phy_write(phydev, MII_CTRL1000, adv);
-	if (err < 0)
-		return err;
 
 	return changed;
 }
