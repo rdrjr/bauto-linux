@@ -439,7 +439,8 @@ static int smsc911x_request_resources(struct platform_device *pdev)
 				ret);
 
 	/* Request clock */
-	pdata->clk = clk_get(&pdev->dev, NULL);
+	pdata->clk = of_clk_get(of_find_compatible_node(NULL, NULL, "fsl,imx6q-weim"), 0);
+
 	if (IS_ERR(pdata->clk))
 		dev_dbg(&pdev->dev, "couldn't get clock %li\n",
 			PTR_ERR(pdata->clk));

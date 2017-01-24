@@ -15,6 +15,7 @@
 #include <linux/cpu.h>
 #include <linux/delay.h>
 #include <linux/export.h>
+#include <linux/gpio.h>
 #include <linux/init.h>
 #include <linux/io.h>
 #include <linux/irq.h>
@@ -22,6 +23,7 @@
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
+#include <linux/of_gpio.h>
 #include <linux/of_platform.h>
 #include <linux/pm_opp.h>
 #include <linux/pci.h>
@@ -31,6 +33,10 @@
 #include <linux/micrel_phy.h>
 #include <linux/mfd/syscon.h>
 #include <linux/mfd/syscon/imx6q-iomuxc-gpr.h>
+#include <linux/of_net.h>
+#include <linux/wl12xx.h>
+#include <linux/smsc911x.h>
+#include <linux/delay.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 #include <asm/system_misc.h>
@@ -38,6 +44,81 @@
 #include "common.h"
 #include "cpuidle.h"
 #include "hardware.h"
+
+#ifdef CONFIG_SMSC911X
+# define EIM_CS0_BASE_ADDR 0x8000000
+# define EIM_CS1_BASE_ADDR EIM_CS0_BASE_ADDR + 0x02000000
+static struct resource smsc911x_cs0_resources[] = {
+	{
+        /* TODO pull this out of the dt */
+        .start        = EIM_CS0_BASE_ADDR,
+        .end          = EIM_CS0_BASE_ADDR + SZ_32M - 1,
+        .flags        = IORESOURCE_MEM,
+    }, {
+        /* irq number is run-time assigned */
+        .flags        = IORESOURCE_IRQ,
+    },
+};
+static struct resource smsc911x_cs1_resources[] = {
+	{
+        /* TODO pull this out of the dt during init */
+        .start        = EIM_CS1_BASE_ADDR,
+        .end          = EIM_CS1_BASE_ADDR + SZ_32M - 1,
+        .flags        = IORESOURCE_MEM,
+    }, {
+        /* irq number is run-time assigned */
+        .flags        = IORESOURCE_IRQ,
+    },
+};
+
+/* NOTE: These settings should be derrived from dt entry as well, but here for completeness */
+/* Entry duplicated because mac address is pushed into this structure potentially */
+static struct smsc911x_platform_config smsc911x_cs0_info = {
+	.flags		    = SMSC911X_USE_16BIT 
+                      | SMSC911X_FORCE_INTERNAL_PHY 
+                      | SMSC911X_SAVE_MAC_ADDRESS,
+    .irq_polarity    = SMSC911X_IRQ_POLARITY_ACTIVE_LOW,
+    .irq_type        = SMSC911X_IRQ_TYPE_PUSH_PULL,
+    .phy_interface    = PHY_INTERFACE_MODE_MII,
+    .shift = 1, /* FIFO Select is bit 0 */
+};
+static struct smsc911x_platform_config smsc911x_cs1_info = {
+	.flags		    = SMSC911X_USE_16BIT 
+                      | SMSC911X_FORCE_INTERNAL_PHY 
+                      | SMSC911X_SAVE_MAC_ADDRESS,
+    .irq_polarity    = SMSC911X_IRQ_POLARITY_ACTIVE_LOW,
+    .irq_type        = SMSC911X_IRQ_TYPE_PUSH_PULL,
+    .phy_interface    = PHY_INTERFACE_MODE_MII,
+    .shift = 1, /* FIFO Select is bit 0 */
+};
+
+static struct platform_device smsc_lan9221_weimcs0_device = {
+	.name		    = "smsc911x_cs0",
+	.id		        = 1,
+	.num_resources	= ARRAY_SIZE(smsc911x_cs0_resources),
+	.resource	    = smsc911x_cs0_resources,
+	.dev		    = {
+		.platform_data = &smsc911x_cs0_info,
+	},
+};
+
+static struct platform_device smsc_lan9221_weimcs1_device = {
+	.name		    = "smsc911x_cs1",
+	.id		        = 0,
+	.num_resources	= ARRAY_SIZE(smsc911x_cs1_resources),
+	.resource	    = smsc911x_cs1_resources,
+	.dev		    = {
+		.platform_data = &smsc911x_cs1_info,
+	},
+};
+
+/* These are defined in the dts */
+/* static struct regulator_consumer_supply dummy_supplies[] = {
+	REGULATOR_SUPPLY("vdd33a", "smsc911x"),
+	REGULATOR_SUPPLY("vddvario", "smsc911x"),
+};
+*/
+#endif // CONFIG_SMSC911X
 
 /* For imx6q sabrelite board: set KSZ9021RN RGMII pad skew */
 static int ksz9021rn_phy_fixup(struct phy_device *phydev)
@@ -229,6 +310,93 @@ put_node:
 	of_node_put(np);
 }
 
+
+#define OCOTP_MACn(n)	(0x00000620 + (n) * 0x10)
+void __init ksp5013_enet_mac_init(const char *compatible)
+{
+	struct device_node *ocotp_np, *enet_np;
+	void __iomem *base;
+	struct property *newmac;
+	u32 macaddr_low, macaddr_high;
+	u8 *macaddr;
+
+	enet_np = of_find_compatible_node(NULL, NULL, compatible);
+	if (!enet_np)
+		return;
+
+	if (of_get_mac_address(enet_np))
+		goto put_enet_node;
+
+	ocotp_np = of_find_compatible_node(NULL, NULL, "fsl,imx6q-ocotp");
+	if (!ocotp_np) {
+		pr_warn("failed to find ocotp node\n");
+		goto put_enet_node;
+	}
+
+	base = of_iomap(ocotp_np, 0);
+	if (!base) {
+		pr_warn("failed to map ocotp\n");
+		goto put_ocotp_node;
+	}
+
+	macaddr_high = readl_relaxed(base + OCOTP_MACn(0));
+	macaddr_low = readl_relaxed(base + OCOTP_MACn(1));
+
+	newmac = kzalloc(sizeof(*newmac) + 6, GFP_KERNEL);
+	if (!newmac)
+		goto put_ocotp_node;
+
+	newmac->value = newmac + 1;
+	newmac->length = 6;
+	newmac->name = kstrdup("local-mac-address", GFP_KERNEL);
+	if (!newmac->name) {
+		kfree(newmac);
+		goto put_ocotp_node;
+	}
+
+	macaddr = newmac->value;
+	macaddr[5] = macaddr_high & 0xff;
+	macaddr[4] = (macaddr_high >> 8) & 0xff;
+	macaddr[3] = (macaddr_high >> 16) & 0xff;
+	macaddr[2] = (macaddr_high >> 24) & 0xff;
+	macaddr[1] = macaddr_low & 0xff;
+	macaddr[0] = (macaddr_low >> 8) & 0xff;
+
+	of_update_property(enet_np, newmac);
+
+put_ocotp_node:
+	of_node_put(ocotp_np);
+put_enet_node:
+	of_node_put(enet_np);
+}
+
+static inline void ksp5013_enet_init(void)
+{
+    struct regmap *gpr;
+
+    ksp5013_enet_mac_init("fsl,imx6q-fec");
+    imx6q_enet_phy_init();
+    //ksp5013_1588_init();
+
+    /* TODO make this a dt request */
+    gpr = syscon_regmap_lookup_by_compatible("fsl,imx6q-iomuxc-gpr");
+    if (!IS_ERR(gpr))
+    {
+        /* Set 32MB for WEIM CS0-3 and CS0 & CS1 on */
+        regmap_update_bits(gpr, IOMUXC_GPR1, 0x3F, 0x09);
+    }
+    else
+        pr_err("failed to find fsl,imx6q-iomux-gpr regmap\n");
+
+#ifdef CONFIG_SMSC911X
+    smsc911x_cs0_resources[1].start = gpio_to_irq(132); /* EIM_D22__GPIO5_IO04 */
+    smsc911x_cs0_resources[1].end = gpio_to_irq(132); /* EIM_D22__GPIO5_IO04 */
+    smsc911x_cs1_resources[1].start = gpio_to_irq(86); /* EIM_D22__GPIO3_IO22 */
+    smsc911x_cs1_resources[1].end = gpio_to_irq(86); /* EIM_D22__GPIO3_IO22 */
+#endif //CONFIG_SMSC911X
+}
+
+
 static void __init imx6q_axi_init(void)
 {
 	struct regmap *gpr;
@@ -273,7 +441,7 @@ static void __init imx6q_init_machine(void)
 	if (parent == NULL)
 		pr_warn("failed to initialize soc device\n");
 
-	imx6q_enet_phy_init();
+	ksp5013_enet_init();
 
 	of_platform_populate(NULL, of_default_bus_match_table, NULL, parent);
 
@@ -378,6 +546,12 @@ static void __init imx6q_init_late(void)
 		imx6q_opp_init();
 		platform_device_register(&imx6q_cpufreq_pdev);
 	}
+
+#ifdef CONFIG_SMSC911X
+    /* Placed in init_late to avoid duplicated probe calls */
+    platform_device_register(&smsc_lan9221_weimcs0_device);
+    platform_device_register(&smsc_lan9221_weimcs1_device);
+#endif //CONFIG_SMSC911X
 }
 
 static void __init imx6q_map_io(void)

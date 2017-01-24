@@ -200,14 +200,6 @@
 	status = "okay";
 };
 
-&gpio_leds {
-	user_led_gpio {
-		label = "phyflex:user_led_gpio";
-		gpios = <&gpio2 24 GPIO_ACTIVE_HIGH>;
-		linux,default-trigger = "gpio";
-	};
-};
-
 &hdmi {
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_hdmicec>;
