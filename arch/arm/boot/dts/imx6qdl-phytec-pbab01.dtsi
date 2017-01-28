@@ -75,7 +75,7 @@
 
 		#gpio-cells = <3>;
 		#clock-cells = <1>;
-		status = "okay";
+		status = "disabled";
 		phytec,cam0_data_en-gpio = <&gpio5 20 GPIO_ACTIVE_LOW>;
 		phytec,cam0_npwrdn-gpio  = <&gpio1 24 GPIO_ACTIVE_LOW>;
 
@@ -198,14 +198,6 @@
 
 &fec {
 	status = "okay";
-};
-
-&gpio_leds {
-	user_led_gpio {
-		label = "phyflex:user_led_gpio";
-		gpios = <&gpio2 24 GPIO_ACTIVE_HIGH>;
-		linux,default-trigger = "gpio";
-	};
 };
 
 &hdmi {

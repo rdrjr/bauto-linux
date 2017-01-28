@@ -21,6 +21,30 @@
 		ipu1 = &ipu2;
 	};
 
+	regulators {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		vcc_3v3: regulator@2 {
+			compatible = "regulator-fixed";
+			reg = <2>;
+			regulator-name = "vcc_3v3";
+			regulator-min-microvolt = <3300000>;
+			regulator-max-microvolt = <3300000>;
+			regulator-always-on;
+		};
+
+		vdd_3v3_logic: regulator@3 {
+			compatible = "regulator-fixed";
+			reg = <3>;
+			regulator-name = "vdd_3v3_logic";
+			regulator-min-microvolt = <3300000>;
+			regulator-max-microvolt = <3300000>;
+			regulator-always-on;
+		};
+	};
+
 	chosen {
 		stdout-path = &uart4;
 	};
@@ -160,5 +184,149 @@
 };
 
 &sata {
-        status = "okay";
+        status = "disabled";
+};
+
+&hdmi {
+	status = "disabled";
+};
+
+&iomuxc {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_hog>, <&pinctrl_hog_2>;
+	hog {
+		pinctrl_hog_2: hoggrp2 {
+			fsl,pins = <
+				MX6QDL_PAD_EIM_EB1__GPIO2_IO29     0x100F1    /* WDT_nOE */
+				MX6QDL_PAD_EIM_WAIT__GPIO5_IO00    0x130F1    /* WDT_WDI */
+			>;
+		};
+	};
+
+	weim {
+		/* Pin control for ETH1 via EIM bus */
+		pinctrl_weim_cs0: weim_cs0 {
+			fsl,pins = <
+				/* nCS (GPIO9) */
+				MX6QDL_PAD_EIM_CS0__EIM_CS0_B        0xb0b1
+				/* IRQ input from PHY (4.7k PU on line) */
+				MX6QDL_PAD_EIM_A24__GPIO5_IO04       0x1f0c1
+				/* PME Power Wakupe signal from PHY */
+				MX6QDL_PAD_GPIO_16__GPIO7_IO11       0x1f0c1
+			>;
+		};
+
+		pinctrl_weim_cs1: weim_cs1 {
+			fsl,pins = <
+				/* nCS (GPIO10) */
+				MX6QDL_PAD_EIM_CS1__EIM_CS1_B        0xb0b1
+				/* IRQ input from PHY (4.7k PU on line) */
+				MX6QDL_PAD_EIM_D22__GPIO3_IO22       0x1f0c1
+				/* PME Power Wakeup signal from PHY */
+				MX6QDL_PAD_DISP0_DAT15__GPIO5_IO09   0x1f0c1
+			>;
+		};
+
+		pinctrl_weim_bus: weim_bus {
+			fsl,pins = <
+				/* Control Lines */
+				/* RD# */
+				MX6QDL_PAD_EIM_OE__EIM_OE_B          0x1b0b1
+				/* WR# */
+				MX6QDL_PAD_EIM_RW__EIM_RW            0x1b0b1
+				/* FIFO_SEL is output to PHY GPIO6_IO06 (no line pulls) */
+				MX6QDL_PAD_EIM_A23__GPIO6_IO06       0x1b0b1
+
+				/* Address Lines (SRE_FAST | HYS) */
+				MX6QDL_PAD_EIM_DA1__EIM_AD01         0x0b0b1
+				MX6QDL_PAD_EIM_DA2__EIM_AD02         0x0b0b1
+				MX6QDL_PAD_EIM_DA3__EIM_AD03         0x0b0b1
+				MX6QDL_PAD_EIM_DA4__EIM_AD04         0x0b0b1
+				MX6QDL_PAD_EIM_DA5__EIM_AD05         0x0b0b1
+				MX6QDL_PAD_EIM_DA6__EIM_AD06         0x0b0b1
+				MX6QDL_PAD_EIM_DA7__EIM_AD07         0x0b0b1
+
+				/* Data Lines (SRE_SLOW | ~HYS) */
+				MX6QDL_PAD_CSI0_DATA_EN__EIM_DATA00  0x1b0b0
+				MX6QDL_PAD_CSI0_VSYNC__EIM_DATA01    0x1b0b0
+				MX6QDL_PAD_CSI0_DAT4__EIM_DATA02     0x1b0b0
+				MX6QDL_PAD_CSI0_DAT5__EIM_DATA03     0x1b0b0
+				MX6QDL_PAD_CSI0_DAT6__EIM_DATA04     0x1b0b0
+				MX6QDL_PAD_CSI0_DAT7__EIM_DATA05     0x1b0b0
+				MX6QDL_PAD_CSI0_DAT8__EIM_DATA06     0x1b0b0
+				MX6QDL_PAD_CSI0_DAT9__EIM_DATA07     0x1b0b0
+				MX6QDL_PAD_CSI0_DAT12__EIM_DATA08    0x1b0b0
+				MX6QDL_PAD_CSI0_DAT13__EIM_DATA09    0x1b0b0
+				MX6QDL_PAD_CSI0_DAT14__EIM_DATA10    0x1b0b0
+				MX6QDL_PAD_CSI0_DAT15__EIM_DATA11    0x1b0b0
+				MX6QDL_PAD_CSI0_DAT16__EIM_DATA12    0x1b0b0
+				MX6QDL_PAD_CSI0_DAT17__EIM_DATA13    0x1b0b0
+				MX6QDL_PAD_CSI0_DAT18__EIM_DATA14    0x1b0b0
+				MX6QDL_PAD_CSI0_DAT19__EIM_DATA15    0x1b0b0
+			>;
+		};
+	};
+};
+
+&weim {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_weim_bus &pinctrl_weim_cs0 &pinctrl_weim_cs1>;
+
+	#address-cells = <2>;
+	#size-cells = <1>;
+	ranges = <0 0 0x08000000 0x04000000
+		  1 0 0x0c000000 0x04000000>;
+	fsl,weim-cs-gpr = <&gpr>;
+
+	smsc911x_eth1: weim@1,0 {
+		compatible = "smsc,lan9221", "smsc,lan9115";
+		reg = <1 0 0x04000000>;
+
+		vdd33a-supply = <&vcc_3v3>;
+		vddvario-supply = <&vdd_3v3_logic>;
+		interrupt-parent = <&gpio3>;
+		interrupts = <22>;
+
+		phy-mode = "mii";
+
+		reg-io-width = <2>;
+		smsc,irq-push-pull;
+		smsc,force-internal-phy;
+		smsc,save-mac-address;
+
+		fsl,weim-cs = <1>;
+		fsl,weim-cs-timing = <0x006100B1 /* EIM_CSnGCR1 */
+				      0x00000000 /* EIM_CSnGCR2 */
+				      0x04080000 /* EIM_CSnRCR1 */
+				      0x00000000 /* EIM_CSnRCR2 */
+				      0xC4000000 /* EIM_CSnWCR1 */
+				      0x00000000 /* EIM_CSnWCR2 */
+		>;
+	};
+
+	smsc911x_eth2: weim@0,0 {
+		compatible = "smsc,lan9221", "smsc,lan9115";
+		reg = <0 0 0x04000000>;
+
+		vdd33a-supply = <&vcc_3v3>;
+		vddvario-supply = <&vdd_3v3_logic>;
+		interrupt-parent = <&gpio5>;
+		interrupts = <4>;
+
+		phy-mode = "mii";
+
+		reg-io-width = <2>;
+		smsc,irq-push-pull;
+		smsc,force-internal-phy;
+		smsc,save-mac-address;
+
+		fsl,weim-cs = <0>;
+		fsl,weim-cs-timing = <0x006100B1 /* EIM_CSnGCR1 */
+				      0x00000000 /* EIM_CSnGCR2 */
+				      0x04080000 /* EIM_CSnRCR1 */
+				      0x00000000 /* EIM_CSnRCR2 */
+				      0xC4000000 /* EIM_CSnWCR1 */
+				      0x00000000 /* EIM_CSnWCR2 */
+		>;
+	};
 };
