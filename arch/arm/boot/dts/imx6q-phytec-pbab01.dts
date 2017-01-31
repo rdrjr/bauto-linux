@@ -284,8 +284,10 @@
 
 		vdd33a-supply = <&vcc_3v3>;
 		vddvario-supply = <&vdd_3v3_logic>;
+
+		#interrupt-cells = <2>;
 		interrupt-parent = <&gpio3>;
-		interrupts = <22>;
+		interrupts = <22 0x8>;
 
 		phy-mode = "mii";
 
@@ -310,8 +312,10 @@
 
 		vdd33a-supply = <&vcc_3v3>;
 		vddvario-supply = <&vdd_3v3_logic>;
+
+		#interrupt-cells = <2>;
 		interrupt-parent = <&gpio5>;
-		interrupts = <4>;
+		interrupts = <4 0x8>;
 
 		phy-mode = "mii";
 
