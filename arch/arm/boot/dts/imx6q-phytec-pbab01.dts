@@ -220,11 +220,11 @@
 			fsl,pins = <
 				/* Control Lines */
 				/* RD# */
-				MX6QDL_PAD_EIM_OE__EIM_OE_B          0x1b0b1
+				MX6QDL_PAD_EIM_OE__EIM_OE_B          0xb0b1
 				/* WR# */
 				MX6QDL_PAD_EIM_RW__EIM_RW            0xb0b1
 				/* FIFO_SEL */
-				MX6QDL_PAD_EIM_A23__GPIO6_IO06       0xf0b1
+				MX6QDL_PAD_EIM_A23__GPIO6_IO06       0xb0b1
 
 				/* Address Lines (SRE_FAST) */
 				MX6QDL_PAD_EIM_DA1__EIM_AD01         0xb0b1
@@ -265,6 +265,7 @@
 	#size-cells = <1>;
 	ranges = <0 0 0x08000000 0x04000000
 		  1 0 0x0c000000 0x04000000>;
+
 	fsl,weim-cs-gpr = <&gpr>;
 
 	smsc911x_eth1: weim@1,0 {
@@ -284,7 +285,6 @@
 		reg-io-width = <2>;
 		smsc,irq-push-pull;
 		smsc,force-internal-phy;
-		smsc,save-mac-address;
 
 		fsl,weim-cs = <1>;
 		fsl,weim-cs-timing = <0x006100B1 /* EIM_CSnGCR1 */
@@ -313,7 +313,6 @@
 		reg-io-width = <2>;
 		smsc,irq-push-pull;
 		smsc,force-internal-phy;
-		smsc,save-mac-address;
 
 		fsl,weim-cs = <0>;
 		fsl,weim-cs-timing = <0x006100B1 /* EIM_CSnGCR1 */
